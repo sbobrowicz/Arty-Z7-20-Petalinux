@@ -1,0 +1,68 @@
+/* Workarounds for petalinux configurations */
+#ifndef __PLNX_PLATFORM_TOP_H
+#define __PLNX_PLATFORM_TOP_H
+
+#include <configs/platform-auto.h>
+
+#define CONFIG_OF_EMBED 1
+
+/*
+#ifdef CONFIG_SYS_MALLOC_LEN
+# undef CONFIG_SYS_MALLOC_LEN
+#endif
+#define CONFIG_SYS_MALLOC_LEN	0x1400000
+
+#ifdef CONFIG_SYS_SDRAM_BASE
+# undef CONFIG_SYS_SDRAM_BASE
+#endif
+#define CONFIG_SYS_SDRAM_BASE	0x0
+
+#ifdef CONFIG_SYS_SDRAM_SIZE
+# undef CONFIG_SYS_SDRAM_SIZE
+#endif
+#define CONFIG_SYS_SDRAM_SIZE	0x20000000
+
+#ifdef CONFIG_SYS_INIT_RAM_ADDR
+# undef CONFIG_SYS_INIT_RAM_ADDR
+#endif
+#define CONFIG_SYS_INIT_RAM_ADDR	CONFIG_SYS_SDRAM_BASE
+
+#ifdef CONFIG_SYS_INIT_RAM_SIZE
+# undef CONFIG_SYS_INIT_RAM_SIZE
+#endif
+#define CONFIG_SYS_INIT_RAM_SIZE	CONFIG_SYS_MALLOC_LEN
+*/
+#ifdef CONFIG_ZYNQ_GEM_PHY_ADDR0
+# undef CONFIG_ZYNQ_GEM_PHY_ADDR0
+#endif
+#define CONFIG_ZYNQ_GEM_PHY_ADDR0	1
+/*
+#ifdef CONFIG_SYS_TEXT_BASE
+# undef CONFIG_SYS_TEXT_BASE
+#endif
+#define CONFIG_SYS_TEXT_BASE	0x4000000
+*/
+/* additional config setting for Arty-Z */
+
+#define CONFIG_ZYNQ_I2C0
+#define CONFIG_ZYNQ_I2C1
+#define CONFIG_SYS_I2C_EEPROM_ADDR_LEN 1
+#define CONFIG_CMD_EEPROM
+#define CONFIG_DISPLAY
+#define CONFIG_I2C_EDID
+
+/* GEM MAC address offset */
+#define CONFIG_ZYNQ_GEM_SPI_MAC_OFFSET	0x20
+
+#if defined(CONFIG_ZYNQ_I2C0) || defined(CONFIG_ZYNQ_I2C1)
+#define CONFIG_SYS_I2C_ZYNQ
+#endif
+
+/* I2C */
+#if defined(CONFIG_SYS_I2C_ZYNQ)
+# define CONFIG_SYS_I2C
+# define CONFIG_SYS_I2C_ZYNQ_SPEED             100000
+# define CONFIG_SYS_I2C_ZYNQ_SLAVE             0
+#endif /* CONFIG_SYS_I2C_ZYNQ */
+
+#endif /* __PLNX_PLATFORM_TOP_H */

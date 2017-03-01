@@ -1,0 +1,25 @@
+From e2382ceaffc0c36dc21c01576c1e454af0e01ca1 Mon Sep 17 00:00:00 2001
+From: Sam Bobrowicz <sbobrowicz@digilentinc.com>
+Date: Mon, 27 Feb 2017 19:27:38 -0800
+Subject: [PATCH] configs: zynq_artyz7_defconfig: Add BOOTDELAY
+
+the BOOTDELAY option is now handled using Kconfig, so it should be added to the Arty Z7 defconfig.
+---
+ configs/zynq_artyz7_defconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/configs/zynq_artyz7_defconfig b/configs/zynq_artyz7_defconfig
+index 60515a2..b696ef9 100644
+--- a/configs/zynq_artyz7_defconfig
++++ b/configs/zynq_artyz7_defconfig
+@@ -6,6 +6,7 @@ CONFIG_SPL=y
+ CONFIG_FIT=y
+ CONFIG_FIT_VERBOSE=y
+ CONFIG_FIT_SIGNATURE=y
++CONFIG_BOOTDELAY=3
+ CONFIG_HUSH_PARSER=y
+ CONFIG_SYS_PROMPT="Zynq> "
+ # CONFIG_CMD_IMLS is not set
+-- 
+2.4.11
+

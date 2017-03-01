@@ -1,0 +1,486 @@
+From 6805a0479ea267c752b6f44e5e712d3db0c35280 Mon Sep 17 00:00:00 2001
+From: Sam Bobrowicz <sbobrowicz@digilentinc.com>
+Date: Tue, 28 Feb 2017 00:26:06 -0800
+Subject: [PATCH 2/2] Additional Digilent specific changes
+
+Additional changes made to support Digilent boards. These changes are
+properly maintained in the github.com/Digilent/linux-digilent/ repo.
+---
+ .../bindings/drm/xilinx/dglnt_encoder.txt          |  22 ++
+ arch/arm/boot/dts/Makefile                         |   1 +
+ arch/arm/boot/dts/zynq-artyz7.dts                  |  72 +++++++
+ drivers/gpu/drm/xilinx/Kconfig                     |   6 +
+ drivers/gpu/drm/xilinx/Makefile                    |   2 +
+ drivers/gpu/drm/xilinx/dglnt_encoder.c             | 225 +++++++++++++++++++++
+ drivers/iio/adc/xilinx-xadc-core.c                 |  52 ++---
+ 7 files changed, 357 insertions(+), 23 deletions(-)
+ create mode 100644 Documentation/devicetree/bindings/drm/xilinx/dglnt_encoder.txt
+ create mode 100644 arch/arm/boot/dts/zynq-artyz7.dts
+ create mode 100644 drivers/gpu/drm/xilinx/dglnt_encoder.c
+
+diff --git a/Documentation/devicetree/bindings/drm/xilinx/dglnt_encoder.txt b/Documentation/devicetree/bindings/drm/xilinx/dglnt_encoder.txt
+new file mode 100644
+index 0000000..f0950a0
+--- /dev/null
++++ b/Documentation/devicetree/bindings/drm/xilinx/dglnt_encoder.txt
+@@ -0,0 +1,22 @@
++Device-Tree bindings for Digilent DRM Encoder Slave
++
++This driver provides support for VGA and HDMI outputs on Digilent FPGA boards. The
++VGA or HDMI port must be connected to a Xilinx display pipeline via an axi2vid
++IP core.
++
++Required properties:
++ - compatible: Should be "dglnt,drm-encoder".
++
++Optional properties:
++ - dglnt,edid-i2c: The I2C device connected to the DDC bus on the video connector.
++                   This is used to obtain the supported resolutions of an attached 
++                   monitor. If not defined, then a default set of resolutions is used
++                   and the display will initialize to 720p. Note most VGA connectors
++                   on Digilent boards do not have the DDC bus routed out. 
++
++Example:
++
++      encoder_0: digilent_encoder {
++		   compatible = "dglnt,drm-encoder";
++         dglnt,edid-i2c = <&i2c1>;
++      };
+diff --git a/arch/arm/boot/dts/Makefile b/arch/arm/boot/dts/Makefile
+index 8e06edc..845ba56 100644
+--- a/arch/arm/boot/dts/Makefile
++++ b/arch/arm/boot/dts/Makefile
+@@ -786,6 +786,7 @@ dtb-$(CONFIG_ARCH_VT8500) += \
+ dtb-$(CONFIG_ARCH_ZYNQ) += \
+ 	zynq-afx-nand.dtb \
+ 	zynq-afx-nor.dtb \
++	zynq-artyz7.dtb \
+ 	zynq-cc108.dtb \
+ 	zynq-parallella.dtb \
+ 	zynq-zc702.dtb \
+diff --git a/arch/arm/boot/dts/zynq-artyz7.dts b/arch/arm/boot/dts/zynq-artyz7.dts
+new file mode 100644
+index 0000000..8653736
+--- /dev/null
++++ b/arch/arm/boot/dts/zynq-artyz7.dts
+@@ -0,0 +1,72 @@
++/*
++ * Digilent ARTY Z7 board DTS
++ *
++ *  Copyright (C) 2016 Digilent
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++/dts-v1/;
++#include "zynq-7000.dtsi"
++
++/ {
++	model = "Zynq ARTY Z7 Development Board";
++	compatible = "digilent,zynq-artyz7", "xlnx,zynq-7000";
++
++	aliases {
++		ethernet0 = &gem0;
++		serial0 = &uart0;
++		spi0 = &qspi;
++		mmc0 = &sdhci0;
++	};
++
++	memory {
++		device_type = "memory";
++		reg = <0x0 0x20000000>;
++	};
++
++	chosen {
++		bootargs = "";
++		stdout-path = "serial0:115200n8";
++	};
++
++	usb_phy0: phy0 {
++		compatible = "usb-nop-xceiv";
++		#phy-cells = <0>;
++		reset-gpios = <&gpio0 46 1>;
++	};
++};
++
++&clkc {
++	ps-clk-frequency = <50000000>;
++};
++
++&gem0 {
++	status = "okay";
++	phy-mode = "rgmii-id";
++	phy-handle = <&ethernet_phy>;
++
++	ethernet_phy: ethernet-phy@0 { /* rtl8211e-vl */
++		reg = <1>;
++	};
++};
++
++&qspi {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&sdhci0 {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&uart0 {
++	u-boot,dm-pre-reloc;
++	status = "okay";
++};
++
++&usb0 {
++	status = "okay";
++	dr_mode = "host";
++	usb-phy = <&usb_phy0>;
++};
+diff --git a/drivers/gpu/drm/xilinx/Kconfig b/drivers/gpu/drm/xilinx/Kconfig
+index a713b17..c32a4a6 100644
+--- a/drivers/gpu/drm/xilinx/Kconfig
++++ b/drivers/gpu/drm/xilinx/Kconfig
+@@ -21,3 +21,9 @@ config DRM_XILINX_DP_SUB
+ 	select DRM_XILINX_DP
+ 	help
+ 	  DRM driver for Xilinx Display Port Subsystem.
++
++config DRM_DIGILENT_ENCODER
++   tristate "Digilent VGA/HDMI DRM Encoder Driver"
++   depends on DRM_XILINX
++   help
++     DRM slave encoder for Video-out on Digilent boards.
+diff --git a/drivers/gpu/drm/xilinx/Makefile b/drivers/gpu/drm/xilinx/Makefile
+index 705472c..e12c05a 100644
+--- a/drivers/gpu/drm/xilinx/Makefile
++++ b/drivers/gpu/drm/xilinx/Makefile
+@@ -10,3 +10,5 @@ xilinx_drm-y += xilinx_cresample.o xilinx_osd.o xilinx_rgb2yuv.o xilinx_vtc.o
+ obj-$(CONFIG_DRM_XILINX) += xilinx_drm.o
+ obj-$(CONFIG_DRM_XILINX_DP) += xilinx_drm_dp.o
+ obj-$(CONFIG_DRM_XILINX_DP_SUB) += xilinx_drm_dp_sub.o
++obj-$(CONFIG_DRM_DIGILENT_ENCODER) += dglnt_encoder.o
++
+diff --git a/drivers/gpu/drm/xilinx/dglnt_encoder.c b/drivers/gpu/drm/xilinx/dglnt_encoder.c
+new file mode 100644
+index 0000000..1595091
+--- /dev/null
++++ b/drivers/gpu/drm/xilinx/dglnt_encoder.c
+@@ -0,0 +1,225 @@
++/*
++ * dglnt_encoder.c - DRM slave encoder for Video-out on Digilent boards
++ *
++ * Copyright (C) 2015 Digilent
++ * Author: Sam Bobrowicz <sbobrowicz@digilentinc.com>
++ *
++ * Based on udl_encoder.c and udl_connector.c, Copyright (C) 2012 Red Hat.
++ * Also based on xilinx_drm_dp.c, Copyright (C) 2014 Xilinx, Inc.
++ * 
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
++ *
++ */
++
++#include <drm/drmP.h>
++#include <drm/drm_edid.h>
++#include <drm/drm_encoder_slave.h>
++
++#include <linux/device.h>
++#include <linux/module.h>
++#include <linux/err.h>
++#include <linux/i2c.h>
++#include <linux/of.h>
++#include <linux/of_platform.h>
++#include <linux/platform_device.h>
++
++#define DGLNT_ENC_MAX_FREQ 150000
++#define DGLNT_ENC_MAX_H 1920
++#define DGLNT_ENC_MAX_V 1080
++#define DGLNT_ENC_PREF_H 1280
++#define DGLNT_ENC_PREF_V 720
++
++struct dglnt_encoder {
++	struct drm_encoder *encoder;
++	struct i2c_adapter *i2c_bus;
++   bool i2c_present;
++};
++
++static inline struct dglnt_encoder *to_dglnt_encoder(struct drm_encoder *encoder)
++{
++	return to_encoder_slave(encoder)->slave_priv;
++}
++
++static bool dglnt_mode_fixup(struct drm_encoder *encoder,
++			   const struct drm_display_mode *mode,
++			   struct drm_display_mode *adjusted_mode)
++{
++	return true;
++}
++
++static void dglnt_encoder_mode_set(struct drm_encoder *encoder,
++				 struct drm_display_mode *mode,
++				 struct drm_display_mode *adjusted_mode)
++{
++}
++
++static void
++dglnt_encoder_dpms(struct drm_encoder *encoder, int mode)
++{
++}
++
++static void dglnt_encoder_save(struct drm_encoder *encoder)
++{
++}
++
++static void dglnt_encoder_restore(struct drm_encoder *encoder)
++{
++}
++
++static int dglnt_encoder_mode_valid(struct drm_encoder *encoder,
++				    struct drm_display_mode *mode)
++{
++   if (mode && 
++      !(mode->flags & ((DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLCLK) | DRM_MODE_FLAG_3D_MASK)) &&
++      (mode->clock <= DGLNT_ENC_MAX_FREQ) &&
++      (mode->hdisplay <= DGLNT_ENC_MAX_H) && 
++      (mode->vdisplay <= DGLNT_ENC_MAX_V)) 
++         return MODE_OK;
++   return MODE_BAD;
++}
++
++static int dglnt_encoder_get_modes(struct drm_encoder *encoder,
++				   struct drm_connector *connector)
++{
++   struct dglnt_encoder *dglnt = to_dglnt_encoder(encoder);
++	struct edid *edid;
++   int num_modes = 0;
++   
++   if (dglnt->i2c_present)
++   {
++      edid = drm_get_edid(connector, dglnt->i2c_bus);
++      drm_mode_connector_update_edid_property(connector, edid);
++      if (edid) 
++      {
++         num_modes = drm_add_edid_modes(connector, edid);
++         kfree(edid);
++      }
++   }
++   else
++   {
++      num_modes = drm_add_modes_noedid(connector, DGLNT_ENC_MAX_H, DGLNT_ENC_MAX_V);
++      drm_set_preferred_mode(connector, DGLNT_ENC_PREF_H, DGLNT_ENC_PREF_V);
++   }   
++	return num_modes;
++}
++
++static enum drm_connector_status dglnt_encoder_detect(struct drm_encoder *encoder,
++		     struct drm_connector *connector)
++{
++   struct dglnt_encoder *dglnt = to_dglnt_encoder(encoder);
++
++   if (dglnt->i2c_present)
++   {
++      if (drm_probe_ddc(dglnt->i2c_bus))
++         return connector_status_connected;
++      return connector_status_disconnected;
++   }
++   else
++      return connector_status_unknown; 
++}
++
++static struct drm_encoder_slave_funcs dglnt_encoder_slave_funcs = {
++	.dpms = dglnt_encoder_dpms,
++	.save			= dglnt_encoder_save,
++	.restore		= dglnt_encoder_restore,
++	.mode_fixup = dglnt_mode_fixup,
++	.mode_valid		= dglnt_encoder_mode_valid,
++	.mode_set = dglnt_encoder_mode_set,
++	.detect			= dglnt_encoder_detect,
++	.get_modes		= dglnt_encoder_get_modes,
++};
++
++static int dglnt_encoder_encoder_init(struct platform_device *pdev,
++				      struct drm_device *dev,
++				      struct drm_encoder_slave *encoder)
++{
++	struct dglnt_encoder *dglnt = platform_get_drvdata(pdev);
++	struct device_node *sub_node;
++
++	encoder->slave_priv = dglnt;
++	encoder->slave_funcs = &dglnt_encoder_slave_funcs;
++
++	dglnt->encoder = &encoder->base;
++
++    /* get i2c adapter for edid */
++   dglnt->i2c_present = false;
++	sub_node = of_parse_phandle(pdev->dev.of_node, "dglnt,edid-i2c", 0);
++	if (sub_node) 
++   {
++	   dglnt->i2c_bus = of_find_i2c_adapter_by_node(sub_node);
++      if (!dglnt->i2c_bus)
++		   DRM_INFO("failed to get the edid i2c adapter, using default modes\n");
++      else
++         dglnt->i2c_present = true;
++	   of_node_put(sub_node);
++   }
++
++	return 0;
++}
++
++static int dglnt_encoder_probe(struct platform_device *pdev)
++{
++	struct dglnt_encoder *dglnt;
++
++	dglnt = devm_kzalloc(&pdev->dev, sizeof(*dglnt), GFP_KERNEL);
++	if (!dglnt)
++		return -ENOMEM;
++
++	platform_set_drvdata(pdev, dglnt);
++
++	return 0;
++}
++
++static int dglnt_encoder_remove(struct platform_device *pdev)
++{
++	return 0;
++}
++
++static const struct of_device_id dglnt_encoder_of_match[] = {
++	{ .compatible = "dglnt,drm-encoder", },
++	{ /* end of table */ },
++};
++MODULE_DEVICE_TABLE(of, dglnt_encoder_of_match);
++
++static struct drm_platform_encoder_driver dglnt_encoder_driver = {
++	.platform_driver = {
++		.probe			= dglnt_encoder_probe,
++		.remove			= dglnt_encoder_remove,
++		.driver			= {
++			.owner		= THIS_MODULE,
++			.name		= "dglnt-drm-enc",
++			.of_match_table	= dglnt_encoder_of_match,
++		},
++	},
++
++	.encoder_init = dglnt_encoder_encoder_init,
++};
++
++static int __init dglnt_encoder_init(void)
++{
++	return platform_driver_register(&dglnt_encoder_driver.platform_driver);
++}
++
++static void __exit dglnt_encoder_exit(void)
++{
++	platform_driver_unregister(&dglnt_encoder_driver.platform_driver);
++}
++
++module_init(dglnt_encoder_init);
++module_exit(dglnt_encoder_exit);
++
++MODULE_AUTHOR("Digilent, Inc.");
++MODULE_DESCRIPTION("DRM slave encoder for Video-out on Digilent boards");
++MODULE_LICENSE("GPL v2");
+diff --git a/drivers/iio/adc/xilinx-xadc-core.c b/drivers/iio/adc/xilinx-xadc-core.c
+index 4e258a2..4878712 100644
+--- a/drivers/iio/adc/xilinx-xadc-core.c
++++ b/drivers/iio/adc/xilinx-xadc-core.c
+@@ -1043,23 +1043,23 @@ static const struct iio_chan_spec xadc_channels[] = {
+ 	XADC_CHAN_VOLTAGE(5, 7, XADC_REG_VCCO_DDR, "vccoddr", true),
+ 	XADC_CHAN_VOLTAGE(6, 12, XADC_REG_VREFP, "vrefp", false),
+ 	XADC_CHAN_VOLTAGE(7, 13, XADC_REG_VREFN, "vrefn", false),
+-	XADC_CHAN_VOLTAGE(8, 11, XADC_REG_VPVN, "vpvn", false),
+-	XADC_CHAN_VOLTAGE(9, 16, XADC_REG_VAUX(0), "vaux0", false),
+-	XADC_CHAN_VOLTAGE(10, 17, XADC_REG_VAUX(1), "vaux1", false),
+-	XADC_CHAN_VOLTAGE(11, 18, XADC_REG_VAUX(2), "vaux2", false),
+-	XADC_CHAN_VOLTAGE(12, 19, XADC_REG_VAUX(3), "vaux3", false),
+-	XADC_CHAN_VOLTAGE(13, 20, XADC_REG_VAUX(4), "vaux4", false),
+-	XADC_CHAN_VOLTAGE(14, 21, XADC_REG_VAUX(5), "vaux5", false),
+-	XADC_CHAN_VOLTAGE(15, 22, XADC_REG_VAUX(6), "vaux6", false),
+-	XADC_CHAN_VOLTAGE(16, 23, XADC_REG_VAUX(7), "vaux7", false),
+-	XADC_CHAN_VOLTAGE(17, 24, XADC_REG_VAUX(8), "vaux8", false),
+-	XADC_CHAN_VOLTAGE(18, 25, XADC_REG_VAUX(9), "vaux9", false),
+-	XADC_CHAN_VOLTAGE(19, 26, XADC_REG_VAUX(10), "vaux10", false),
+-	XADC_CHAN_VOLTAGE(20, 27, XADC_REG_VAUX(11), "vaux11", false),
+-	XADC_CHAN_VOLTAGE(21, 28, XADC_REG_VAUX(12), "vaux12", false),
+-	XADC_CHAN_VOLTAGE(22, 29, XADC_REG_VAUX(13), "vaux13", false),
+-	XADC_CHAN_VOLTAGE(23, 30, XADC_REG_VAUX(14), "vaux14", false),
+-	XADC_CHAN_VOLTAGE(24, 31, XADC_REG_VAUX(15), "vaux15", false),
++	XADC_CHAN_VOLTAGE(8, 11, XADC_REG_VPVN, NULL, false),
++	XADC_CHAN_VOLTAGE(9, 16, XADC_REG_VAUX(0), NULL, false),
++	XADC_CHAN_VOLTAGE(10, 17, XADC_REG_VAUX(1), NULL, false),
++	XADC_CHAN_VOLTAGE(11, 18, XADC_REG_VAUX(2), NULL, false),
++	XADC_CHAN_VOLTAGE(12, 19, XADC_REG_VAUX(3), NULL, false),
++	XADC_CHAN_VOLTAGE(13, 20, XADC_REG_VAUX(4), NULL, false),
++	XADC_CHAN_VOLTAGE(14, 21, XADC_REG_VAUX(5), NULL, false),
++	XADC_CHAN_VOLTAGE(15, 22, XADC_REG_VAUX(6), NULL, false),
++	XADC_CHAN_VOLTAGE(16, 23, XADC_REG_VAUX(7), NULL, false),
++	XADC_CHAN_VOLTAGE(17, 24, XADC_REG_VAUX(8), NULL, false),
++	XADC_CHAN_VOLTAGE(18, 25, XADC_REG_VAUX(9), NULL, false),
++	XADC_CHAN_VOLTAGE(19, 26, XADC_REG_VAUX(10), NULL, false),
++	XADC_CHAN_VOLTAGE(20, 27, XADC_REG_VAUX(11), NULL, false),
++	XADC_CHAN_VOLTAGE(21, 28, XADC_REG_VAUX(12), NULL, false),
++	XADC_CHAN_VOLTAGE(22, 29, XADC_REG_VAUX(13), NULL, false),
++	XADC_CHAN_VOLTAGE(23, 30, XADC_REG_VAUX(14), NULL, false),
++	XADC_CHAN_VOLTAGE(24, 31, XADC_REG_VAUX(15), NULL, false),
+ };
+ 
+ static const struct iio_info xadc_info = {
+@@ -1085,7 +1085,7 @@ static int xadc_parse_dt(struct iio_dev *indio_dev, struct device_node *np,
+ 	unsigned int *conf)
+ {
+ 	struct xadc *xadc = iio_priv(indio_dev);
+-	struct iio_chan_spec *channels;
++	struct iio_chan_spec *channels, *chan;
+ 	struct device_node *chan_node, *child;
+ 	unsigned int num_channels;
+ 	const char *external_mux;
+@@ -1133,6 +1133,7 @@ static int xadc_parse_dt(struct iio_dev *indio_dev, struct device_node *np,
+ 		return -ENOMEM;
+ 
+ 	num_channels = 9;
++	chan = &channels[9];
+ 
+ 	chan_node = of_get_child_by_name(np, "xlnx,channels");
+ 	if (chan_node) {
+@@ -1142,17 +1143,22 @@ static int xadc_parse_dt(struct iio_dev *indio_dev, struct device_node *np,
+ 				break;
+ 			}
+ 
+-			channels[num_channels] = xadc_channels[reg + 9];
+-			channels[num_channels].channel = num_channels - 1;
+-
+ 			ret = of_property_read_u32(child, "reg", &reg);
+ 			if (ret || reg > 16)
+ 				continue;
+ 
+ 			if (of_property_read_bool(child, "xlnx,bipolar"))
+-				channels[num_channels].scan_type.sign = 's';
+-
++				chan->scan_type.sign = 's';
++
++			if (reg == 0) {
++				chan->scan_index = 11;
++				chan->address = XADC_REG_VPVN;
++			} else {
++				chan->scan_index = 15 + reg;
++				chan->address = XADC_REG_VAUX(reg - 1);
++			}
+ 			num_channels++;
++			chan++;
+ 		}
+ 	}
+ 	of_node_put(chan_node);
+-- 
+2.4.11
+
